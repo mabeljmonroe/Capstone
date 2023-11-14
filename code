@@ -1,0 +1,120 @@
+/*
+Measuring AC Voltage and Current with Phase Difference
+Outputing Power Measurement and Power Factor
+
+Kyle Ogden
+Mabel Monroe
+
+ECE 402 - Fall 23
+
+Run on Arduino Uno
+*/
+
+//initialize lcd library
+#include <LiquidCrystal.h>
+
+//initialize analog inputs
+const int Iamp = A0;
+const int Iphase = A1;
+const int V = A2;
+
+//initialize LCD configuration
+const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+//initialize global variables for calculations
+double mVoltage;
+double VRMS;
+double ARMS;
+double Vphased;
+double Iphased;
+double Vmag;
+double power;
+double pf;
+int mVperAmp = 100;
+double *currentpointer;
+//double data[4];
+
+double test;
+
+void setup() {
+  // put your setup code here, to run once:
+  //serial log to monitor output independent of lcd
+  Serial.begin(9600);
+  //initalizing lcd size
+  lcd.begin(16, 2);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  /*
+  Process of Loop
+  run and return voltage and current measurements based on functions
+  process data into power and power factor
+  display to lcd
+  */
+  power = 1;
+  pf = 1;
+  printtolcd(power, pf);
+  measurement(&ARMS, &test);
+  //ARMS = *IRMS;
+  Serial.print(ARMS);
+  Serial.println(" IRMS");
+  Serial.print(test);
+  Serial.println(" VPP"); 
+}
+
+
+
+void printtolcd(double power, double pf) {
+  lcd.setCursor(0, 0);
+  lcd.print("Power (W)");
+  lcd.setCursor(11, 0);
+  lcd.print("PF");
+  lcd.setCursor(0, 1);
+  lcd.print(power);
+  lcd.setCursor(11, 1);
+  lcd.print(pf);
+}
+
+void measurement(double* IRMS, double* test){
+  //static double measurements[4];
+  int voltageRead;
+  int currentmagRead;
+  int currentphaseRead;
+  
+  int currentbuffer[100];
+  int maxcurrent = 0;
+  uint32_t currentsum = 0;
+  int loops = 0;
+  double Imaxavg = 0;
+  double IVRMS = 1;
+  //double IRMS = 2;
+
+
+
+  uint32_t start = millis();
+  
+  while((millis() - start) < 5000){
+    voltageRead = analogRead(V);
+    currentmagRead = analogRead(Iamp);
+    currentphaseRead = analogRead(Iphase);
+
+
+    for(int i  = 0; i < 400; i++){
+      currentmagRead = analogRead(Iamp);
+
+      if(currentmagRead > maxcurrent){
+        maxcurrent = currentmagRead;
+      }
+
+    }
+    loops = loops + 1;
+    currentsum += maxcurrent;
+  }
+
+  Imaxavg = currentsum/loops;
+  IVRMS = (((Imaxavg * 5)/1024) - 2.52) * .707;
+  *IRMS = IVRMS*1000/mVperAmp;
+  *test = (Imaxavg * 5)/1024;
+}
