@@ -1,0 +1,137 @@
+/*
+Measuring AC Voltage and Current with Phase Difference
+Outputing Power Measurement and Power Factor
+
+Kyle Ogden
+Mabel Monroe
+
+ECE 402 - Fall 23
+
+Run on Arduino Uno
+*/
+
+//initialize lcd library
+#include <LiquidCrystal.h>
+
+//initialize analog inputs
+const int Iamp = A5;
+const int Iphase = A2;
+const int V = A1;
+
+//initialize LCD configuration
+const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+//initialize global variables for calculations
+double mVoltage;
+double VRMS;
+double ARMS;
+double Vphased;
+double Iphased;
+double Vmag;
+double power;
+double pf;
+int mVperAmp = 100;
+double gain = (120.0/6.21)*(520.0/300.0);
+
+double test;
+
+void setup() {
+  // put your setup code here, to run once:
+  //serial log to monitor output independent of lcd
+  Serial.begin(9600);
+  //initalizing lcd size
+  lcd.begin(16, 2);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  /*
+  Process of Loop
+  run and return voltage and current measurements based on functions
+  process data into power and power factor
+  display to lcd
+  */
+  power = 1;
+  pf = 1;
+  
+  measurement(&ARMS, &test);
+  //ARMS = *IRMS;
+  Serial.print(ARMS);
+  Serial.println(" IRMS");
+  Serial.print(test);
+  Serial.println(" VRMS"); 
+  printtolcd(ARMS, test);
+  //Serial.println(voltage); 
+}
+
+
+
+void printtolcd(double power, double pf) {
+  lcd.setCursor(0, 0);
+  lcd.print("I                  ");
+  lcd.setCursor(11, 0);
+  lcd.print("V");
+  lcd.setCursor(0, 1);
+  lcd.print(power);
+  lcd.setCursor(11, 1);
+  lcd.print(pf);
+}
+
+void measurement(double* IRMS, double* VRMS){
+  //static double measurements[4];
+  int voltageRead;
+  int currentmagRead;
+  int currentphaseRead;
+
+  float currentrms = 0;
+  float voltagerms = 0;
+  float voltage = 0;
+  float current = 0;
+  double Iavg = 0;
+  float currentsum = 0;
+  uint32_t voltagesum = 0;
+  int loops = 0;
+  int vloop = 0;
+  float IVRMS;
+  float VVRMS;
+
+
+
+  //uint32_t start = millis();
+  unsigned long looptime = micros();
+  while(loops < 20000){ 
+
+    unsigned long period = 10; //sample at 200Hz obeying Nyquist, 5000us period
+
+    if(micros() - looptime > period){
+      looptime += period;
+      loops = loops + 1;
+      currentmagRead = analogRead(Iamp);
+      voltageRead = analogRead(A0);
+      current = (currentmagRead*5.0/1024) - 2.43; 
+      voltage = voltageRead*5.0/1024.0;
+      currentsum  = currentsum + currentmagRead;
+      currentrms += current*current;
+      if(voltageRead > 40){
+        voltagerms += voltage*voltage;
+        vloop += 1;
+
+      }
+
+      looptime = micros();
+    }
+  
+  }
+  voltagerms = voltagerms/vloop;
+  currentrms = currentrms/loops;
+  Iavg = ((double)currentsum/(double)loops)*5.0/1024.0;
+
+  VVRMS = (sqrt(voltagerms) +.7) *gain;
+  IVRMS = (sqrt(currentrms));
+
+  *IRMS = IVRMS*1000/mVperAmp;
+
+  *IRMS = (double)Iavg;
+  *VRMS = IVRMS;
+}
