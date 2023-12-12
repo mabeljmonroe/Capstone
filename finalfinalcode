@@ -1,0 +1,197 @@
+/*
+Measuring AC Voltage and Current with Phase Difference
+Outputing Power Measurement and Power Factor
+
+Kyle Ogden
+Mabel Monroe
+
+ECE 402 - Fall 23
+
+Run on Arduino Uno Rev3
+*/
+
+//initialize lcd library
+#include <LiquidCrystal.h>
+
+//initialize analog inputs
+const int Iamp = A5;
+const int V = A4;
+
+//initialize LCD configuration
+const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+//initialize global variables for calculations
+double VRMS;
+double ARMS;
+double phase;
+double power;
+double powerpf;
+double pf;
+int mVperAmp = 100; //hall effect sensor scalar
+double gain = 9.58*2*(519.4/299.4); //voltage divider 
+
+
+void setup() {
+  //initalizing lcd size
+  lcd.begin(16, 2);
+}
+
+void loop() {
+  /*
+  Process of Loop
+  run and return voltage and current measurements based on functions
+  process data into power and power factor
+  display to lcd
+  */
+  measurement(&ARMS, &VRMS, &pf);
+
+  power = ARMS*VRMS; 
+
+  //If measured current is less than 0.06A, then likely no device plugged in and is noise 
+  if(ARMS < 0.07){
+    power = 0;
+  }
+  //change the power factor to positive if it is negative
+  if(pf < 0){
+    pf = pf*-1;
+  }
+  //calculate the power given power factor (very innaccurate rn)
+  powerpf = power*pf;
+
+  //Display VA, pf, and W
+  printtolcd(power, pf, powerpf);
+}
+
+
+
+void printtolcd(double power, double pf, double powerpf) {
+    /*
+    Configures the LCD positioning and displays three measurements
+  */
+  lcd.begin(16,2);
+  lcd.setCursor(0, 0);
+  lcd.print("W");
+  lcd.setCursor(5, 0);
+  lcd.print(powerpf);
+  lcd.setCursor(12, 0);
+  lcd.print("pf");
+  lcd.setCursor(0, 1);
+  lcd.print(power);
+  lcd.setCursor(7, 1);
+  lcd.print("Wp");
+  lcd.setCursor(12, 1);
+  lcd.print(pf);
+}
+
+void measurement(double* IRMS, double* VRMS, double* pf){
+  //initialize analog input variables
+  int voltageRead;
+  int currentmagRead;
+  //initialize calculation variables
+  float currentrms = 0;
+  float voltagerms = 0;
+  float voltage = 0;
+  float current = 0;
+  float Iavg = 0;
+  float currentsum = 0;
+  uint32_t voltagesum = 0;
+  int loops = 0;
+  int vloop = 0;
+  float IVRMS;
+  float VVRMS;
+  //initialize phase calculation variables
+  bool currentAboveMidpoint = false;
+  bool voltageAboveZero = false;
+  unsigned long lastCurrentCrossing = 0;
+  unsigned long lastVoltageCrossing = 0;
+  float phaseDifference = 0.0;
+  float phasesum;
+  int phaseloop;
+  float Vphase;
+
+  //initialize calculation time
+  unsigned long looptime = micros();
+
+  while(loops < 10000){ 
+
+    unsigned long period = 10; 
+
+    if(micros() - looptime > period){
+      // add period to looptime
+      looptime += period;
+      //increment loops
+      loops = loops + 1;
+      //read analog inouts
+      currentmagRead = analogRead(Iamp);
+      voltageRead = analogRead(A4);
+      //calaculate running average of current measurement
+      currentsum  = currentsum + currentmagRead;
+      Iavg= currentsum/loops;
+      //Convert current and voltage measurements to voltages
+      current = ((currentmagRead - Iavg)*5.0/1024.0)*10; 
+      voltage = voltageRead*5.0/1024.0;
+      //Sum squares of current measurement
+      currentrms += current*current;
+
+      //Perform phase calculation
+      if (currentmagRead > Iavg) {
+        if (!currentAboveMidpoint) {
+          lastCurrentCrossing = micros();
+          currentAboveMidpoint = true;
+      }
+      } else {
+          currentAboveMidpoint = false;
+        }
+
+      if (voltageRead > 60) {
+         if (!voltageAboveZero) {
+          lastVoltageCrossing = micros();
+          voltageAboveZero = true;
+         }
+      } else {
+          voltageAboveZero = false;
+        }
+
+      if (voltageAboveZero && voltageAboveZero) {
+      // Calculate time difference between zero crossings
+      unsigned long timeDifference = lastCurrentCrossing - lastVoltageCrossing;
+
+      // Convert time difference to phase difference for 60Hz signal
+      phaseDifference = ((float)timeDifference / 16666.7) * 2 * 3.14159265359;
+      phasesum += phaseDifference;
+      phaseloop += 1;
+
+      //Reset phase calculation bools
+      currentAboveMidpoint = false;
+      voltageAboveZero = false;
+       }
+      
+      // Filter out excess zeros from voltage input
+      if(voltageRead > 100){
+        voltagerms += voltage*voltage;
+        vloop += 1;
+
+      }
+      //Calculate total loop time of function
+      looptime = micros();
+    }
+  
+  }
+  //Average sum of squares
+  voltagerms = voltagerms/vloop;
+  currentrms = currentrms/loops;
+
+  //Finish RMS calculation
+  VVRMS = (sqrt(voltagerms))*gain;
+  IVRMS = (sqrt(currentrms))* .707;
+
+  //Convert phase to power factor
+  Vphase = cos(phasesum/phaseloop);
+
+  //Return pointers to new measurments 
+  *IRMS = IVRMS;
+  *VRMS = VVRMS;
+  *pf = Vphase;
+
+}
